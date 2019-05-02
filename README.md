@@ -14,20 +14,23 @@ Disease Prevalence Prediction Project with Google Health Search Data
 
 4. What can be inferred and what suggestions can be drawn for public healthcare provider, policy maker, and friends moving to the U.S.?
 
-## Team Member:
-Kangli Wu, Ruofan Bie, Wei-Hung Hsu
+## Team Member
+**Kangli Wu, Ruofan Bie, Wei-Hung Hsu**
 
-MarkDown:
+## MarkDown
+
 markdown/Dr_Google.Rmd
 markdown/Dr_Google.html
-Screen Cast:
+
+## Screen Cast
 https://www.youtube.com/watch?v=iN0PiqEdkhM&ab_channel=%E5%BE%90%E7%B6%AD%E9%B4%BB
 
-Data Source:
+## Data Source
 CSV file located in the google drive link: https://drive.google.com/open?id=1vM2ruDfKKCma0l4cti4pJLPuSpx5o76q
 
-RegionalInterestByConditionOverTime.csv ( Google Health Related Key Word Search Interest )
-Behavioral_Risk_Factor_Surveillance_System__BRFSS__Prevalence_Data__2011_to_present_.csv ( CDC collected prevalence for chronicle disease and other leading causes of death )
-Website:
-Built on the HPSTR Jekyll Theme template: https://github.com/mmistakes/hpstr-jekyll-theme
-Jekyll is a static site generator with GitHub Pages
+1. RegionalInterestByConditionOverTime.csv ( Google Health Related Key Word Search Interest )
+2. Behavioral_Risk_Factor_Surveillance_System__BRFSS__Prevalence_Data__2011_to_present_.csv ( CDC collected prevalence for chronicle disease and other leading causes of death )
+
+## Website
+1. Built on the HPSTR Jekyll Theme template: https://github.com/mmistakes/hpstr-jekyll-theme
+2. Jekyll is a static site generator with GitHub Pages
