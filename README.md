@@ -1,7 +1,9 @@
 # Dr.-Google-Project
 Disease Prevalence Prediction Project with Google Health Search Data
-Objective
-Are people more concerned about health now? Is the trend the same across states?
+
+##Objective
+
+*Are people more concerned about health now? Is the trend the same across states?
 
 Are people in different states concerned about different diseases?
 
