@@ -20,6 +20,7 @@ Disease Prevalence Prediction Project with Google Health Search Data
 ## MarkDown
 
 markdown/Dr_Google.Rmd
+
 markdown/Dr_Google.html
 
 ## Screen Cast
