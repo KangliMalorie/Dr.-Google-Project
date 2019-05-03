@@ -1,0 +1,393 @@
+---
+title: "Dr.Google?"
+author: "Kangli Wu, Weihung Hsh, RuofanBie"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Background
+What would you do when you’ve been having this weird headache intermittently for a week? Would you directly go to a doctor? Guess the answer is the same for most of us: we google it first!
+
+This brings us to wonder what google health search trends are telling us. Are people generally becoming more aware of health conditions and health risks? How does search interest for top health issues change over time? Are there huge differences in health concerns between states?
+
+We believe google searches offer much more information than symptom description or illness diagnose. Thus, we decided to take a further look into the search numbers.
+
+We found our dataset from [kaggle](https://www.kaggle.com/shaunmgbray/health-searches-by-us-metropolitan-area-2004-2017/data). The data set contains google search data for 9 disease topic in 210 metropolian areas from 46 states during 2004 to 2017. The topics include: cancer, cardiovascular, depression, diabetes, diarrhea, obesity, rehab, stroke and vaccine. The google search data is computed in the following method: google collect search data in different areas for the same topic at the same time. The area with highest search records gets 100 google search point. Other areas get their point according to their relative search records to the highest search records. For example, in 2004, New york city's search record on cancer is 100000, which is the highest value among all areas, then New York City gets 100 points. On the same topic in the same year, Cleveland's search record is 50000, then Clevelend will get 50 points.
+
+With this google search data set, we try to implement 3 motivations:
+
+1.  Explore the trend of search interest over years
+
+2.  Explore the variation of search interest distributed across the country
+
+3.  Find the prevalence for different diseases over years and try to use the search interst data to predict it
+
+The provider of the data set had already made thorough [descriptive analysis](https://googlenewslab.gistapp.com/searching-for-health/) of search interest and prevalence data by providing map plot for each disease topic in each year. Our analysis is inspired by this work, however, we intend to go further step to build model between search interst data and prevalence data.
+
+The following article is composed by 5 parts. In part one we wrangle the data sets for later analysis. Part 2 contains general conclusion we can get from line charts, which reflect the general trend of search interest over years. Part 3 presents detialed conclusions we drew from map plots in a particular year. For map plots in other years, please refer to [previous analysis](https://googlenewslab.gistapp.com/searching-for-health/). Our prediction model and results are contained in part 4 and part 5 will discuss main conclusions and limits of our analysis.
+
+## Part 1: Data wrangling
+The original Search Interest data set is very wide with dimension 210$\times$128. The 210 row contains 210 metropolian areas from 46 states, which means there are more than one area in each state. The 128 column contains Search Interest data for each disease in each year. For the convenience in later analysis, we consider to `aggregate` different areas in one state by their `mean` Search Interest and then change the wide data into long data:
+```{r, message=FALSE, warning=FALSE}
+library(readr)
+library(tidyverse)
+library(ggplot2)
+library(usmap)
+library(RColorBrewer)
+library(stringr)
+```
+```{r, message=FALSE, warning=FALSE}
+file <- read_csv("RegionalInterestByConditionOverTime.csv",col_names=T)
+
+SearchData <- file %>% 
+  select(-c("dma", "geoCode")) %>%  #delete useless columns
+  aggregate(.~state, ., mean)   #aggregate areas in the same state by means 
+
+Search <- SearchData %>%
+  gather(., typeyear, value, -state) %>% 
+  separate(typeyear, c("year", "type"))  #change wide data into long data
+
+head(Search)
+```
+
+Apart from Search Interest data, we also found prevalence data over years for cancer, cardiovascular, diabetes, depression and obesity from [cdc BRFSS database](https://chronicdata.cdc.gov/Behavioral-Risk-Factors/Behavioral-Risk-Factor-Surveillance-System-BRFSS-P/dttw-5yxu/data). We didn't find the prevalence data for other search topics for the following reasons:
+
+1. The search topic is too abstract and BRFSS cannot provide all the detialed subtopics. For example, for search topic `Vaccine`, BRFSS only provide the data for `flu shot` and `Pneumonia Vaccination`, which is only a small part in all kinds of `Vaccine`.
+
+2. The search topic is a common symptom and may not necessarily related to diseases. For example, `diarrhea` is a very common symptom which might result from a lot of factors and might get on well quickly without therapies. People who search the topic definately may not get diagnosis of `stomach diseases`.
+
+3. It is difficult to find corresponding prevalence data for the search topic. For example, there is no prevalence for `rehab` and `stroke` in the prevalence data base.
+
+```{r, message=FALSE, warning=FALSE}
+cancer <- read.csv("cancer.csv")
+cardio <- read.csv("cardiovascular.csv")
+depres <- read.csv("depression.csv")
+diabet <- read.csv("diabetes.csv")
+obese <- read.csv("obese.csv")
+cardio <- cardio %>%
+   mutate(Topic=rep("cardiovascular", nrow(cardio))) #change original disease type "cardiovascular disease" into "cardiovascular"
+cancer <- cbind(cancer[,1:3], Topic=rep("cancer", nrow(cancer)), cancer[,4:8]) #add type column to cancer so that data sets can be wrangled together
+prevalence <- rbind(cancer, cardio, depres, diabet) %>%
+              select(Year, Locationabbr, Topic, value) %>%
+              rename(year=Year, state=Locationabbr, type=Topic) #keep the prevalence data set in the same form as the Search data set
+obese <- obese %>%
+         select(Year, Locationabbr, Topic, Data_value) %>%
+         rename(year=Year, state=Locationabbr, type=Topic, value=Data_value)%>%
+         mutate(type=rep("obesity", nrow(obese))) #change obesity data into the same form
+prevalence <- rbind(prevalence, obese) #conbime all the data
+head(prevalence)
+```
+
+## Part 2: Line Chart and Search Trend
+
+```{r}
+nationplot<-Search %>% 
+  mutate(year=as.numeric(year)) %>%
+  group_by(state, year) %>%
+  summarise(total=sum(value)) %>%
+  ggplot(aes(year, total, color=state)) + #for each year, we sum every state's total search for all diseases
+  geom_line() +
+  theme(legend.position="none") +
+  xlab("Year") +
+  ylab("Search") +
+  ggtitle("Google Health Search Trend by State")
+nationplot 
+```
+
+We plot the nation trend first. *Note: A search value represents a state’s relative search amount of a disease compared to other states. It is standardized between 0 to 100. Therefore, larger sums of search indicate more scores closer to 100. We can tell that the U.S. as a whole is becoming more health-concious.
+
+```{r}
+diseaseplot<-Search %>% 
+  mutate(year=as.numeric(year)) %>%
+  group_by(type, year) %>%
+  summarise(total=sum(value)) %>%
+  ggplot(aes(year, total, color=type)) + #for each year, we sum every disease's total search from all states
+  geom_line()+
+  xlab("Year") +
+  ylab("Search") +
+  ggtitle("Google Health Search Trend by Disease")
+diseaseplot 
+```
+
+We then plot the trend for each disease. From this plot, we can tell that if we look at dieases seperately, the people are searching more about all of them, except cardiovascular recently. However, since the search values were standardized within a disease and a year, this cross disease plot does not make as much sense as the first one does.
+
+```{r}
+stateplot<-Search %>% 
+  mutate(year=as.numeric(year)) %>%
+  filter(state=="CA") %>% 
+  group_by(type) %>%
+  ggplot(aes(year, value, color=type)) + #for California, we plot it's search tread for every disease)
+  geom_line()+
+  xlab("Year") +
+  ylab("Search") +
+  ggtitle("Google Health Search Trend_California")
+stateplot #we also try to plot the search trend for a single state
+```
+
+The plot specifically for a state makes it hard to compare and draw conclusions.
+
+Thus, in exploring these three line charts, we decided the first nation-wide plot, with the consistency in the increasing search trend across states, is the best to indicate that the U.S. as a whole is becoming more health-concious, whereas the second and third plots are harder to interpret. 
+
+## Part 3: Map Plot Results
+Based on the data we wrangled, we wrote a `map_plot` function to output all the map plots for each year and each diseases using `parallel` computation. We do not run the code here, but will present a map plot of Search Data and prevalence data respectively for exihibition. For all the map plots, please refer to our [github repository](https://github.com/whhsu2/whhsu2.github.io).
+
+```{r, eval=FALSE}
+map_plot <- function(Year, data=Search){
+  library(tidyverse)
+  library(ggplot2)
+  library(usmap)
+  library(RColorBrewer)
+  library("scales")
+  data_year <- data %>% filter(year==Year)
+  color <- c("Blues", "Greens", "Oranges", "Reds", "BuPu", "PuRd", "PuBuGn", "Purples", "YlGnBu")
+  # color <- c("Blues", "Greens", "Reds", "YlGnBu", "BuPu") # fill-in color order for prevalence data set
+  for(i in unique(data_year$type)){
+    ind <- which(unique(data_year$type)==i)
+    png(file=paste0(Year, "_", i, ".png"))
+    Figure <- data_year %>% filter(type==i) %>% 
+       plot_usmap(data=., values="value")+ 
+       theme(legend.position = 'right')+
+       labs(title = paste0(Year,"_",i, "_", "Search"))+ #change "Search" into "prevalence" for prevalence data set
+       theme(plot.title = element_text(hjust = 0.5, size=24))+
+       scale_fill_distiller(name="Search Interest", palette = color[ind], breaks=pretty_breaks(n=9)) #change "Search Interest" into "prevalence" for prevalecne data set
+    print(Figure)
+    dev.off()
+  }
+}
+library(parallel)
+Year <- c(2004:2017)
+#Year <- c(2011:2017) #year range for prevalence data set 
+cl <- makeCluster(4)
+parLapply(cl, Year, map_plot, data=Search)
+#parLapply(cl, Year, map_plot, data=prevalence) #parallel code for prevalence data set
+stopCluster(cl)
+```
+
+```{r ,out.width = '50%'}
+knitr::include_graphics(c("2016_diabetes.png", "2017_Diabetes.png"))
+```
+
+###Conclusions from 2016 Search Map
+```{r ,out.width = '50%'}
+knitr::include_graphics(c("2016_cancer.png", "2016_cardiovascular.png","2016_depression.png", "2016_diabetes.png","2016_diarrhea.png", "2016_obesity.png","2016_rehab.png", "2016_stroke.png","2016_vaccine.png"))
+```
+
+*Note: Lighter color means relatively more searches.
+
+The maps of 2016 show different interest distributions of different diseases. They tells us lots of interesting stories and also invoke questions. 
+
+For example, the state of Wyoming is highly concerned about the disease. 
+Does this have anything to do with Wyoming’s over 11,500 farms and ranches? Citizen’s in Maine seem to be most disturbed with depression? Is this because of the long nights and cold winters? People in Minnesota seem most concerned about obesity. But does this lead to larger or smaller obese population?
+
+###Conclusions from 2017 Prevalence Map
+```{r ,out.width = '50%'}
+knitr::include_graphics(c("2017_cancer.png", "2017_cardiovascular.png","2017_Depression.png", "2017_Diabetes.png", "2017_obesity.png"))
+```
+
+Some interesting patterns are spotted in the prevalence maps. 
+
+For instance, the state of Colorado is least concerned about diabetes and obesity. This may be explained by the beautiful mountains and bright days, which are perfect for outdoor stores.
+
+###Conclusions from Search V.S. Prevalence
+```{r ,out.width = '50%'}
+knitr::include_graphics(c("2016_diabetes.png","2017_Diabetes.png", "2016_cancer.png", "2017_cancer.png"))
+```
+Now that we have the maps of search interest and actually prevalence, we figured that we could learn something more by putting them together. 
+
+If we cross-reference the two groups of maps, some interesting patterns can be spotted. It’s obvious that for obesity, Alaska citizens don't care much. Yet, they have pretty high obesity prevalence the following year. Does this mean that if you are more aware and concerned about obesity, you are at lower risk of it later? 
+
+If we look at the two maps for cancer, we see that the northwestern states are less concerned about cancer, yet pretty vulnerable to it. Does this indicate a negative association between cancer search and next year’s cancer outcome? Or are those states merely outliers?
+
+It seems for each disease, there might be an association between searches and actual prevalence. But they are hard to detect from maps. Thus, we run models to specify the associations.
+
+## Part 4: Prediction Model
+Inspired by previous conclusions, we intend to explore the relationship between search interest and prevalence and try to predict prevalecne using search interst data. As we assume people need time to get diagnosis since they search for relative topics on google, we use the search data in one year to predict prevalence data in the next year.
+
+As our data set contains data over a very long time period, we firstly considered to use time series models. However, our regression model is between this year's search data and next year's prevalence data instead of one variable varying according to time. Thus, it might be difficult to develope the model using regular time series model.
+
+Then we consider to use random forest method as our purpose is prediction. At the beginning, we use the following r code to combine the search data with prevalence data. It is a little bit difficult to merge two dataset directly by `merge` or `join` function as they need to match on three key words: `state`, `year` and `type`. As prevalence data set is in the same form of search dataset, we just arrange them according to the three key words and then add the prevalence data to the search dataset.
+```{r}
+Search2010 <- Search %>%
+  filter(year>=2010&year<=2016)%>%
+  filter(type %in% c("cancer", "cardiovascular", "depression", "diabetes", "obesity")) #select data from Search data set matching on year and type with the prevalence data.
+prevalence <- prevalence[!duplicated(prevalence),] #delete repeated data in prevalence dataset.
+prevalence_1 <- prevalence %>%
+  mutate(year=year-1) %>% #As we try to predict the next year's prevalence, we minus the year in prevalence data set by 1 so that it can match with the search dataset. But we should know that prevalence means next year's prevalence in later analysis.
+  filter(state %in% unique(Search2010$state))
+Data <- Search2010 %>%
+  mutate(pre=prevalence_1$value, year=as.numeric(year)) #combine the 2 data sets.
+head(Data)
+```
+
+We used the combined data and `randomForest` package to run random forest model for each disease and calculate the prediction MSE: 
+
+```{r, message=FALSE, warning=FALSE}
+library("randomForest")
+rFM1 <- randomForest(pre~value, data=Data[which(Data$type=="cancer"),], strata=as.factor(year), ntree=1000, importance=T, na.action=na.omit)
+p1 <- predict(rFM1, Data[which(Data$type=="cancer"),])
+mean((Data[which(Data$type=="cancer"),]$pre-p1)^2)
+
+rFM2 <- randomForest(pre~value, data=Data[which(Data$type=="cardiovascular"),], strata=as.factor(year), ntree=1000, importance=T, na.action=na.omit)
+p2 <- predict(rFM2, Data[which(Data$type=="cardiovascular"),])
+mean((Data[which(Data$type=="cardiovascular"),]$pre-p2)^2)
+
+rFM3 <- randomForest(pre~value, data=Data[which(Data$type=="depression"),], strata=as.factor(year), ntree=1000, importance=T, na.action=na.omit)
+p3 <- predict(rFM3, Data[which(Data$type=="depression"),])
+mean((Data[which(Data$type=="depression"),]$pre-p3)^2)
+
+rFM4 <- randomForest(pre~value, data=Data[which(Data$type=="diabetes"),], strata=as.factor(year), ntree=1000, importance=T, na.action=na.omit)
+p4 <- predict(rFM4, Data[which(Data$type=="diabetes"),])
+mean((Data[which(Data$type=="diabetes"),]$pre-p4)^2)
+
+rFM5 <- randomForest(pre~value, data=Data[which(Data$type=="obesity"),], strata=as.factor(year), ntree=1000, importance=T, na.action=na.omit)
+p5 <- predict(rFM5, Data[which(Data$type=="obesity"),])
+mean((Data[which(Data$type=="obesity"),]$pre-p5)^2)
+```
+
+According to the result, the random forest model might have a relative good prediction as the prediction MSE is not very large. However, as we do not have binary respond variable, we cannot present ROC curve or other visualization results. Moreover, the random forest model may not be suitable to exhibit the temporality property of our data set.
+
+Inspired by the temporality, we considered to develop following prediction model:
+Previously, we matched search data and prevalence data on state, year and disease type. We build different linear regression models for different disease type.  For a particular disease, say cancer, it is possible that different state may have different impact on the regression model and we can optimize on the weight for each state to minimize the MSE of the regression model. As there is temporality in the data set, we divide the data by year and use the next year's data as training set for the model built in the previous year to optimize the weight. The algorithm is presented as below:
+
+1. Initialize equal weight for each state;
+
+2. For the \emph{i}th year, we weighed data from each state to build a linear model between search data and prevalence data. Donote the model as $model_i$
+
+3. Then we use the \emph{i+1}th year as the training set for $model_i$. We use search data in the \emph{i+1}th year and $model_i$ to predict prevalence data and calculate MSE. Then we minimize the MSE to get the optimization result of weight.
+
+4. Then we treat the \emph{i+1}th year as training set and use the optimized weight to build linear moder $model_{i+1}$.
+
+5. Repeat step 2 to 4 until the last matched dataset is treated as training set.
+
+We use the following R code to implement this algorithm:
+```{r}
+obj <- function(w, wfit=wfit, test=test){
+   plm <- predict(wfit, data.frame(value=test$value), weights = w)
+   return(mean((w*test$pre-plm)^2))
+}
+
+model <- function(disease){
+  library(tidyverse)
+  Data0 <- Data %>%
+    filter(type==disease)
+  yr <- unique(Data$year)
+  st <- unique(Data$state)
+  W <- NULL
+  w <- rep(1/sqrt(length(st)), length(st))
+  W <- w
+  MSE <- NULL
+  w.old <- w
+  for(i in 1:(length(yr)-1)){
+    train <- Data0 %>%
+      filter(year==yr[i])
+    test <- Data0 %>%
+      filter(year==yr[i+1])
+    wfit <- lm(pre~value, train, weights=w.old)
+    w.new <- optim(w.old, fn=obj, lower=rep(0.01,15), method="L-BFGS-B", wfit=wfit, test=test)
+    new <- w.new$par/sqrt(sum(w.new$par^2))
+    W <- cbind(W, new)
+    w.old <- new
+    MSE <- c(MSE, w.new$value)
+  }
+  Wfit <- lm(pre~value, test, weights=new)
+  return(list(name=disease, Data=Data0, WMatrix=W, MSE=MSE, model=Wfit))
+}
+
+Cancer <- model("cancer")
+Cardio <- model("cardiovascular")
+Diabet <- model("diabetes")
+Depres <- model("depression")
+Obese <- model("obesity")
+```
+
+To present visualization result, we intend to plot the line chart of each state's weight with the variation of year and the final linear model for each disease type. The following R code is a function to output the line chart and the model plot:
+
+```{r, message=FALSE, warning=FALSE}
+st <- unique(Data$state)
+
+Weight <- function(X){
+  library("tidyverse")
+  library("ggrepel")
+  WMatrix <- data.frame(st, X$WMatrix)
+  names(WMatrix) <- c("state", 2010:2016)
+  plotdata <- as.data.frame(WMatrix) %>%
+    gather(., year, weight, -state) %>%
+    mutate(year=as.numeric(year))
+  top <- plotdata %>%
+    filter(year==2016) %>%
+    arrange(desc(weight))  
+  png(file=paste0(X$name, "Weight", ".png"))
+  p1 <- plotdata %>% ggplot(aes(x=year, y=weight, color=state)) +
+    geom_line()+
+    theme(plot.title = element_text(hjust = 0.5, size=12))+
+    labs(title = paste("Weight for Each State in", X$name, "Model"))+
+    annotate("text", x=rep(2016,5)+c(0,0.1,0.1,0,-0.1), y=top$weight[1:5]+c(0,0.002,0.001,0,-0.001), label=top$state[1:5])  
+  print(p1)
+  dev.off() 
+  png(file=paste0(X$name, "Model", ".png"))
+ Wfit <- X$model
+  Data <- X$Data
+  weight <- WMatrix[,7]
+  plotdata1 <- Data%>%
+    filter(year==2016)
+  p2 <- plotdata1 %>% ggplot(aes(x=value, y=pre, label=state))+
+  geom_point()+
+  geom_abline(slope=coefficients(Wfit)[2], intercept=coefficients(Wfit)[1], col=2)+
+  theme(plot.title = element_text(hjust = 0.5, size=24))+
+  labs(title = paste(X$name))+
+  xlab("Search") + ylab("Prevalence")+
+  geom_text_repel()
+  print(p2)
+  dev.off()
+}
+
+Weight(Obese)
+Weight(Cancer)
+Weight(Diabet)
+Weight(Depres)
+Weight(Cardio)
+```
+
+
+```{r ,out.width = '50%'}
+knitr::include_graphics(c("cancerWeight.png", "cardiovascularWeight.png", "depressionWeight.png", "diabetesWeight.png", "obesityWeight.png"))
+```
+
+These plots present the weight for each state with the variation of time. Most line charts become more stable at the end of the time period, which means the model is possible to converge given a longer time period. For each disease, we list out the top 5 most important state in the final linear model. For the prediction model of cancer, ME, CT, MN, CO and HI are the most important 5 states. For the prediction model of cardiovascular, CO, ME, HI MN and FL contribute the most. For depression, the most important 5 states are CO, HI, MT, ME and CA. In the prediction model of diabetes, CO HI, UT, NM and ME are the most important states. As for obesity, CO, ME, HI CA and UT contribute the most.
+
+```{r ,out.width = '50%'}
+knitr::include_graphics(c("cancerModel.png", "cardiovascularModel.png", "depressionModel.png", "diabetesModel.png", "obesityModel.png"))
+```
+
+The above figures present the final prediction model for each state. We can discover that the prediction models exhibit positive relationships between search interest and prevalence for cancer, cardiovascular, depression and diabetes as well as negetive relationship for obesity.These relationships almost keep the same pattern as our analysis of map plots and are also reasonable. 
+People who search for cancer, cardiovascular , depression and diabetes are more likely in the situation that they have already made a "self-diagnosis" according to some typical symptoms of these diseases and they search for them just to confirm the "self-diagnosis". As the typical symptoms of these diseases are usually specific and pointing only to one disease, these people are more likely to be confirmed in later medical diagnosis.
+
+On the other hand, people who search for obesity are more likely to care about their own health. On the other hand, obesity can be avoided or cure in a relative short time by working out and keeping a health life style. As a result, it is resonable to have a nagetive relationship between search interest and prevalence for obesity.
+
+From the scartter plot, we can discover that there are some outliers, which might influence regular linear model. Our model is possible to decrease the influence from outliers by giving weight to each state.
+
+## Part 5: Conlcusions and Limitations
+
+### Association between Search and Prevalence
+For most disease, more searches in the previous year is associated with more cases in the following year. However, this is not true for all. 
+For obesity, more searches in the previous year is associated with fewer cases. This makes sense since compared to other health outcomes, obesity is the most “controllable”. First, they are the quickest to tell and can easily raise concern. Besides, when people are aware of its causes and risks after searching, they may start changing their diet and exercise habits. 
+However, other diseases are harder to tell, and more risk factors are involved. People may only search for it when they sense some symptoms, which sadly means the diseases have already developed. Thus, we can roughly classify the diseases into to categories:
+
+**More search & More Case:**
+
+Cancer, Cardiovascular Diseases, Depression, Diabetes
+
+**More search & Fewer Case:**
+
+Obesity
+
+###Disease Prevalence Prediction
+We have every state’s search interest for every disease in 2017. We could input those values into the models, adopt optimized state weights calculated by the model, and get nationwide estimations of 2018 disease outcomes.
+The model can be trained and updated yearly. 
+
+###Other Inferences
+More inferences can be generated for the government and health care providers. For instance, for searches within the “more search more case” category, if growing amounts of searches are detected, they should be prepared for higher disease occurrences. More treatments, health personnel, and educational brochures may be needed.
+
+###Limitation
+The major limitation of our analysis is that the search interests are relative values. Google gives the county with the maximum amount of search a score of 100, the county with the least amount of search a score of 0, and then standardizes every other county in between. We calculated state scores by taking an average of county scores within a state. Because there are no absolute numbers of searches, we were not able to take into consideration the population sizes. Also, the relative scores are harder to interpret.
